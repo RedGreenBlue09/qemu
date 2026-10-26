@@ -1392,7 +1392,17 @@ static void gic_dist_writeb(void *opaque, hwaddr offset,
             } else if (irq < GIC_INTERNAL) {
                 value = ALL_CPU_MASK;
             }
-            s->irq_target[irq] = value & ALL_CPU_MASK;
+            value &= ALL_CPU_MASK;
+            /*
+             * An SPI has a single pending state that follows its targets.
+             * We latch it per-CPU, so move it to the new targets or an
+             * edge-triggered SPI retargeted while pending is lost.
+             */
+            if (irq >= GIC_INTERNAL && s->revision != REV_11MPCORE &&
+                s->irq_state[irq].pending && value) {
+                s->irq_state[irq].pending = value;
+            }
+            s->irq_target[irq] = value;
         }
     } else if (offset < 0xf00) {
         /* Interrupt Configuration.  */

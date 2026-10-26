@@ -708,8 +708,15 @@ build_madt(GArray *table_data, BIOSLinker *linker, VirtMachineState *vms)
                         .oem_table_id = vms->oem_table_id };
 
     acpi_table_begin(&table, table_data);
-    /* Local Interrupt Controller Address */
-    build_append_int_noprefix(table_data, 0, 4);
+    /*
+     * Local Interrupt Controller Address
+     *
+     * The Windows on ARM HAL uses this as the shared GICv2 CPU interface
+     * base. When it is 0, secondary CPUs look up the MADT again after the
+     * HAL's ACPI table cache is gone and crash.
+     */
+    build_append_int_noprefix(table_data, vms->gic_version == 2 ?
+                              memmap[VIRT_GIC_CPU].base : 0, 4);
     build_append_int_noprefix(table_data, 0, 4);   /* Flags */
 
     /* 5.2.12.15 GIC Distributor Structure */
@@ -827,7 +834,9 @@ static void build_fadt_rev5(GArray *table_data, BIOSLinker *linker,
         .xdsdt_tbl_offset = &dsdt_tbl_offset,
     };
 
-    switch (vms->psci_conduit) {
+    /* With the parking protocol the OS must not use PSCI to boot CPUs. */
+    switch (vms->smp_method == VIRT_SMP_METHOD_PARKING ?
+            QEMU_PSCI_CONDUIT_DISABLED : vms->psci_conduit) {
     case QEMU_PSCI_CONDUIT_DISABLED:
         fadt.arm_boot_arch = 0;
         break;

@@ -1966,7 +1966,12 @@ static void machvirt_init(MachineState *machine)
      * and otherwise we will use HVC (for backwards compatibility and
      * because if we're using KVM then we must use HVC).
      */
-    if (vms->smp_method == VIRT_SMP_METHOD_PARKING || (vms->smp_method == VIRT_SMP_METHOD_AUTO && vms->secure && firmware_loaded)) {
+    /*
+     * With smp-method=parking QEMU's PSCI stays available so the firmware
+     * can still use SYSTEM_OFF/SYSTEM_RESET; secondaries are not powered
+     * off and are released through the parking protocol instead.
+     */
+    if (vms->smp_method != VIRT_SMP_METHOD_PSCI && vms->secure && firmware_loaded) {
         vms->psci_conduit = QEMU_PSCI_CONDUIT_DISABLED;
     } else if (vms->virt) {
         vms->psci_conduit = QEMU_PSCI_CONDUIT_SMC;
@@ -2043,8 +2048,11 @@ static void machvirt_init(MachineState *machine)
             object_property_set_int(cpuobj, "psci-conduit", vms->psci_conduit,
                                     NULL);
 
-            /* Secondary CPUs start in PSCI powered-down state */
-            if (n > 0) {
+            /*
+             * Secondary CPUs start in PSCI powered-down state, unless
+             * they boot through the firmware's parking protocol.
+             */
+            if (n > 0 && vms->smp_method != VIRT_SMP_METHOD_PARKING) {
                 object_property_set_bool(cpuobj, "start-powered-off", true,
                                          NULL);
             }
