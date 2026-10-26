@@ -153,6 +153,7 @@ static const MemMapEntry base_memmap[] = {
     [VIRT_NVDIMM_ACPI] =        { 0x09090000, NVDIMM_ACPI_IO_LEN},
     [VIRT_PVTIME] =             { 0x090a0000, 0x00010000 },
     [VIRT_SECURE_GPIO] =        { 0x090b0000, 0x00001000 },
+	[VIRT_MAILBOX] =            { 0x09ff8000, 0x00008000 },
     [VIRT_MMIO] =               { 0x0a000000, 0x00000200 },
     /* ...repeating for a total of NUM_VIRTIO_TRANSPORTS, each of that size */
     [VIRT_PLATFORM_BUS] =       { 0x0c000000, 0x02000000 },
@@ -385,15 +386,27 @@ static void fdt_add_cpu_nodes(const VirtMachineState *vms)
         char *nodename = g_strdup_printf("/cpus/cpu@%d", cpu);
         ARMCPU *armcpu = ARM_CPU(qemu_get_cpu(cpu));
         CPUState *cs = CPU(armcpu);
+        const char *enable_method = NULL;
 
         qemu_fdt_add_subnode(ms->fdt, nodename);
         qemu_fdt_setprop_string(ms->fdt, nodename, "device_type", "cpu");
         qemu_fdt_setprop_string(ms->fdt, nodename, "compatible",
                                     armcpu->dtb_compatible);
 
-        if (vms->psci_conduit != QEMU_PSCI_CONDUIT_DISABLED && smp_cpus > 1) {
-            qemu_fdt_setprop_string(ms->fdt, nodename,
-                                        "enable-method", "psci");
+        if (smp_cpus > 1) {
+            if (vms->smp_method == VIRT_SMP_METHOD_PARKING) {
+                enable_method = "parking-protocol";
+            } else if (vms->psci_conduit != QEMU_PSCI_CONDUIT_DISABLED) {
+                enable_method = "psci";
+            } else if (vms->smp_method == VIRT_SMP_METHOD_PSCI) {
+                error_setg(&error_fatal, "smp-method=psci requires PSCI support");
+                return;
+            }
+
+            if (enable_method) {
+                qemu_fdt_setprop_string(ms->fdt, nodename,
+                                        "enable-method", enable_method);
+            }
         }
 
         if (addr_cells == 2) {
@@ -676,6 +689,16 @@ static void create_v2m(VirtMachineState *vms)
 
     fdt_add_v2m_gic_node(vms);
     vms->msi_controller = VIRT_MSI_CTRL_GICV2M;
+}
+
+static void create_mailbox(VirtMachineState *vms, MemoryRegion *mem)
+{
+    hwaddr base = vms->memmap[VIRT_MAILBOX].base;
+    hwaddr size = vms->memmap[VIRT_MAILBOX].size;
+
+    memory_region_init_ram(&vms->mailbox_ram, NULL, "virt.mailbox", size,
+                       &error_abort);
+    memory_region_add_subregion(mem, base, &vms->mailbox_ram);
 }
 
 static void create_gic(VirtMachineState *vms, MemoryRegion *mem)
@@ -1943,7 +1966,7 @@ static void machvirt_init(MachineState *machine)
      * and otherwise we will use HVC (for backwards compatibility and
      * because if we're using KVM then we must use HVC).
      */
-    if (vms->secure && firmware_loaded) {
+    if (vms->smp_method == VIRT_SMP_METHOD_PARKING || (vms->smp_method == VIRT_SMP_METHOD_AUTO && vms->secure && firmware_loaded)) {
         vms->psci_conduit = QEMU_PSCI_CONDUIT_DISABLED;
     } else if (vms->virt) {
         vms->psci_conduit = QEMU_PSCI_CONDUIT_SMC;
@@ -2107,6 +2130,8 @@ static void machvirt_init(MachineState *machine)
     virt_flash_fdt(vms, sysmem, secure_sysmem ?: sysmem);
 
     create_gic(vms, sysmem);
+
+    create_mailbox(vms, sysmem);
 
     virt_cpu_post_init(vms, sysmem);
 
@@ -2399,6 +2424,38 @@ static void virt_set_default_bus_bypass_iommu(Object *obj, bool value,
     VirtMachineState *vms = VIRT_MACHINE(obj);
 
     vms->default_bus_bypass_iommu = value;
+}
+
+static char *virt_get_smp_method(Object *obj, Error **errp)
+{
+    VirtMachineState *vms = VIRT_MACHINE(obj);
+
+    switch (vms->smp_method) {
+    case VIRT_SMP_METHOD_AUTO:
+        return g_strdup("auto");
+    case VIRT_SMP_METHOD_PSCI:
+        return g_strdup("psci");
+    case VIRT_SMP_METHOD_PARKING:
+        return g_strdup("parking");
+    default:
+        g_assert_not_reached();
+    }
+}
+
+static void virt_set_smp_method(Object *obj, const char *value, Error **errp)
+{
+    VirtMachineState *vms = VIRT_MACHINE(obj);
+
+    if (!strcmp(value, "psci")) {
+        vms->smp_method = VIRT_SMP_METHOD_PSCI;
+    } else if (!strcmp(value, "parking")) {
+        vms->smp_method = VIRT_SMP_METHOD_PARKING;
+    } else if (!strcmp(value, "auto")) {
+        vms->smp_method = VIRT_SMP_METHOD_AUTO;
+    } else {
+        error_setg(errp, "Invalid smp-method value");
+        error_append_hint(errp, "Valid values are psci, parking, auto.\n");
+    }
 }
 
 static CpuInstanceProperties
@@ -2782,6 +2839,13 @@ static void virt_machine_class_init(ObjectClass *oc, void *data)
                                           "in ACPI table header."
                                           "The string may be up to 8 bytes in size");
 
+
+	object_class_property_add_str(oc, "smp-method",
+                                  virt_get_smp_method,
+                                  virt_set_smp_method);
+    object_class_property_set_description(oc, "smp-method",
+                                          "Set the SMP method. "
+                                          "Valid values are psci, parking and auto");
 }
 
 static void virt_instance_init(Object *obj)
@@ -2832,6 +2896,8 @@ static void virt_instance_init(Object *obj)
     vms->irqmap = a15irqmap;
 
     virt_flash_create(vms);
+
+    vms->smp_method = VIRT_SMP_METHOD_AUTO;
 
     vms->oem_id = g_strndup(ACPI_BUILD_APPNAME6, 6);
     vms->oem_table_id = g_strndup(ACPI_BUILD_APPNAME8, 8);
