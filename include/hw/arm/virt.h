@@ -166,6 +166,7 @@ struct VirtMachineState {
     FWCfgState *fw_cfg;
     PFlashCFI01 *flash[2];
     bool secure;
+    bool force_el3;
     bool highmem;
     bool highmem_compact;
     bool highmem_cxl;

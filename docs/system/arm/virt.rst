@@ -112,6 +112,10 @@ secure
   Set ``on``/``off`` to enable/disable emulating a guest CPU which implements the
   Arm Security Extensions (TrustZone). The default is ``off``.
 
+force-el3
+  Set ``on``/``off`` to enable/disable EL3 without secure. Windows on ARM 32-bit
+  requires EL3, but no secure firmware runs there. The default is ``off``.
+
 virtualization
   Set ``on``/``off`` to enable/disable emulating a guest CPU which implements the
   Arm Virtualization Extensions. The default is ``off``.

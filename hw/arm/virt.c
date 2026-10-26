@@ -3050,7 +3050,7 @@ static void machvirt_init(MachineState *machine)
 
         aarch64 &= object_property_get_bool(cpuobj, "aarch64", NULL);
 
-        if (!vms->secure) {
+        if (!vms->secure && !vms->force_el3) {
             object_property_set_bool(cpuobj, "has_el3", false, NULL);
         }
 
@@ -3276,6 +3276,20 @@ static void virt_set_secure(Object *obj, bool value, Error **errp)
     VirtMachineState *vms = VIRT_MACHINE(obj);
 
     vms->secure = value;
+}
+
+static bool virt_get_force_el3(Object *obj, Error **errp)
+{
+    VirtMachineState *vms = VIRT_MACHINE(obj);
+
+    return vms->force_el3;
+}
+
+static void virt_set_force_el3(Object *obj, bool value, Error **errp)
+{
+    VirtMachineState *vms = VIRT_MACHINE(obj);
+
+    vms->force_el3 = value;
 }
 
 static bool virt_get_virt(Object *obj, Error **errp)
@@ -4219,6 +4233,11 @@ static void virt_machine_class_init(ObjectClass *oc, const void *data)
                                                 "Set on/off to enable/disable the ARM "
                                                 "Security Extensions (TrustZone)");
 
+    object_class_property_add_bool(oc, "force-el3", virt_get_force_el3,
+                                   virt_set_force_el3);
+    object_class_property_set_description(oc, "force-el3",
+                                          "Force enable EL3 even when secure is false");
+
     object_class_property_add_bool(oc, "virtualization", virt_get_virt,
                                    virt_set_virt);
     object_class_property_set_description(oc, "virtualization",
@@ -4368,6 +4387,9 @@ static void virt_instance_init(Object *obj)
     vms->highmem = true;
     vms->highmem_compact = !vmc->no_highmem_compact;
     vms->gic_version = VIRT_GIC_VERSION_NOSEL;
+
+    /* EL3 without secure is only for Windows on ARM 32-bit */
+    vms->force_el3 = false;
 
     vms->highmem_ecam = true;
     vms->highmem_mmio = true;
