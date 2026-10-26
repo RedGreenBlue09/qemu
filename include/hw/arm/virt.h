@@ -97,6 +97,7 @@ enum {
     VIRT_NVDIMM_ACPI,
     VIRT_PVTIME,
     VIRT_ACPI_PCIHP,
+    VIRT_MAILBOX,
     VIRT_GWDT_WS0,
     VIRT_GWDT_REFRESH,
     VIRT_GWDT_CONTROL,
@@ -142,6 +143,13 @@ typedef enum VirtGICType {
 #define VIRT_GIC_VERSION_3_MASK BIT(VIRT_GIC_VERSION_3)
 #define VIRT_GIC_VERSION_4_MASK BIT(VIRT_GIC_VERSION_4)
 #define VIRT_GIC_VERSION_5_MASK BIT(VIRT_GIC_VERSION_5)
+
+/* Secondary CPU boot method, from lzw29107's smp-method property. */
+typedef enum VirtSMPMethodType {
+    VIRT_SMP_METHOD_AUTO,
+    VIRT_SMP_METHOD_PSCI,
+    VIRT_SMP_METHOD_PARKING,
+} VirtSMPMethodType;
 
 struct VirtMachineClass {
     MachineClass parent;
@@ -212,6 +220,8 @@ struct VirtMachineState {
     MemoryRegion *secure_sysmem;
     bool pci_preserve_config;
     GPtrArray *smmuv3_devices;
+    VirtSMPMethodType smp_method;
+    MemoryRegion mailbox_ram;
 };
 
 #define VIRT_ECAM_ID(high) (high ? VIRT_HIGH_PCIE_ECAM : VIRT_PCIE_ECAM)

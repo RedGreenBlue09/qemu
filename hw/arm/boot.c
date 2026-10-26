@@ -1261,7 +1261,8 @@ void arm_load_kernel(ARMCPU *cpu, MachineState *ms, struct arm_boot_info *info)
             object_property_set_int(cpuobj, "psci-conduit", info->psci_conduit,
                                     &error_abort);
             /* Secondary CPUs start in PSCI powered-down state.  */
-            if (ARM_CPU(cs) != info->primary_cpu) {
+            if (ARM_CPU(cs) != info->primary_cpu &&
+                !info->secondaries_running) {
                 object_property_set_bool(cpuobj, "start-powered-off", true,
                                          &error_abort);
             }

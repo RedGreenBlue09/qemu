@@ -108,6 +108,11 @@ struct arm_boot_info {
      * running any secure firmware there. Based on lzw29107's force_psci.
      */
     bool force_psci;
+    /*
+     * Start secondary CPUs running even when PSCI is enabled, because the
+     * firmware parks them itself (ACPI parking protocol).
+     */
+    bool secondaries_running;
     /* Used internally by arm_boot.c */
     int is_linux;
     hwaddr initrd_start;
