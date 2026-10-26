@@ -1021,8 +1021,16 @@ build_madt(GArray *table_data, BIOSLinker *linker, VirtMachineState *vms)
                         .oem_table_id = vms->oem_table_id };
 
     acpi_table_begin(&table, table_data);
-    /* Local Interrupt Controller Address */
-    build_append_int_noprefix(table_data, 0, 4);
+    /*
+     * Local Interrupt Controller Address
+     *
+     * The Windows on ARM HAL uses this as the shared GICv2 CPU interface
+     * base. When it is 0, secondary CPUs look up the MADT again after the
+     * HAL's ACPI table cache is gone and crash.
+     */
+    build_append_int_noprefix(table_data,
+                              vms->gic_version == VIRT_GIC_VERSION_2 ?
+                              memmap[VIRT_GIC_CPU].base : 0, 4);
     build_append_int_noprefix(table_data, 0, 4);   /* Flags */
 
     /* 5.2.12.15 GIC Distributor Structure */
