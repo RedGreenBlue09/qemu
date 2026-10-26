@@ -3258,6 +3258,11 @@ static void machvirt_init(MachineState *machine)
     vms->bootinfo.skip_dtb_autoload = true;
     vms->bootinfo.firmware_loaded = firmware_loaded;
     vms->bootinfo.psci_conduit = vms->psci_conduit;
+    /*
+     * With force-el3 the CPU has EL3 even without secure=on, but no secure
+     * firmware runs there, so keep the PSCI that the FADT advertises.
+     */
+    vms->bootinfo.force_psci = vms->force_el3 && !vms->secure;
     arm_load_kernel(ARM_CPU(first_cpu), machine, &vms->bootinfo);
 
     vms->machine_done.notify = virt_machine_done;

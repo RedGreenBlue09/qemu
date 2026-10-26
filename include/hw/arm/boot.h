@@ -102,6 +102,12 @@ struct arm_boot_info {
      * to EL3) then PSCI will not be enabled.
      */
     int psci_conduit;
+    /*
+     * Enable the emulated PSCI even if the guest image starts at the
+     * conduit's exception level, for boards that give the CPU EL3 without
+     * running any secure firmware there. Based on lzw29107's force_psci.
+     */
+    bool force_psci;
     /* Used internally by arm_boot.c */
     int is_linux;
     hwaddr initrd_start;
