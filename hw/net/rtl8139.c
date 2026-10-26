@@ -1884,6 +1884,9 @@ static uint16_t ip_checksum(void *data, size_t len)
     return ~ones_complement_sum((uint8_t*)data, len);
 }
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-but-set-variable"
+
 static int rtl8139_cplus_transmit_one(RTL8139State *s)
 {
     if (!rtl8139_transmitter_enabled(s))
@@ -2356,6 +2359,8 @@ skip_offload:
 
     return 1;
 }
+
+#pragma GCC diagnostic pop
 
 static void rtl8139_cplus_transmit(RTL8139State *s)
 {

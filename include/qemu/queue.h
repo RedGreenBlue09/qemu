@@ -298,9 +298,12 @@ struct {                                                                \
 } while (/*CONSTCOND*/0)
 
 #define QSIMPLEQ_INSERT_TAIL(head, elm, field) do {                     \
+    _Pragma("GCC diagnostic push")                                      \
+    _Pragma("GCC diagnostic ignored \"-Wdangling-pointer\"")            \
     (elm)->field.sqe_next = NULL;                                       \
     *(head)->sqh_last = (elm);                                          \
     (head)->sqh_last = &(elm)->field.sqe_next;                          \
+    _Pragma("GCC diagnostic pop")                                       \
 } while (/*CONSTCOND*/0)
 
 #define QSIMPLEQ_INSERT_AFTER(head, listelm, elm, field) do {           \

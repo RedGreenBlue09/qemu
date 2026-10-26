@@ -125,10 +125,10 @@ bool replay_has_interrupt(void);
 /* Processing clocks and other time sources */
 
 /*! Save the specified clock */
-int64_t replay_save_clock(ReplayClockKind kind, int64_t clock,
+int64_t replay_save_clock(unsigned int kind, int64_t clock,
                           int64_t raw_icount);
 /*! Read the specified clock from the log or return cached data */
-int64_t replay_read_clock(ReplayClockKind kind, int64_t raw_icount);
+int64_t replay_read_clock(unsigned int kind, int64_t raw_icount);
 /*! Saves or reads the clock depending on the current replay mode. */
 #define REPLAY_CLOCK(clock, value)                                      \
     (replay_mode == REPLAY_MODE_PLAY                                    \

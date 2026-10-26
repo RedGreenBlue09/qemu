@@ -864,6 +864,9 @@ static const MemoryRegionOps tulip_ops = {
     },
 };
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-but-set-variable"
+
 static void tulip_idblock_crc(TULIPState *s, uint16_t *srom)
 {
     int word, n;
@@ -893,6 +896,8 @@ static void tulip_idblock_crc(TULIPState *s, uint16_t *srom)
         }
     }
 }
+
+#pragma GCC diagnostic pop
 
 static uint16_t tulip_srom_crc(TULIPState *s, uint8_t *eeprom, size_t len)
 {

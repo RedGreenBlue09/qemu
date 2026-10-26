@@ -4883,6 +4883,9 @@ static int img_dd_skip(const char *arg,
     return 0;
 }
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-but-set-variable"
+
 static int img_dd(int argc, char **argv)
 {
     int ret = 0;
@@ -5141,6 +5144,8 @@ out:
     }
     return 0;
 }
+
+#pragma GCC diagnostic pop
 
 static void dump_json_block_measure_info(BlockMeasureInfo *info)
 {

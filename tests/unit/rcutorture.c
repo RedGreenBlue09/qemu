@@ -241,6 +241,8 @@ int n_mberror;
 /* Updates protected by counts_mutex */
 long long rcu_stress_count[RCU_STRESS_PIPE_LEN + 1];
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-but-set-variable"
 
 static void *rcu_read_stress_test(void *arg)
 {
@@ -286,6 +288,8 @@ static void *rcu_read_stress_test(void *arg)
     rcu_unregister_thread();
     return NULL;
 }
+
+#pragma GCC diagnostic pop
 
 /*
  * Stress Test Updater
