@@ -751,6 +751,13 @@ static void ufs_write_reg(UfsHc *u, hwaddr offset, uint32_t data, unsigned size)
         } else if (FIELD_EX32(u->reg.hce, HCE, HCE) &&
                    !FIELD_EX32(data, HCE, HCE)) {
             u->reg.hcs = 0;
+            /*
+             * Disabling the host controller resets it. Drop completion
+             * notifications left by the previous driver (e.g. firmware that
+             * predates UTRLCNR and never clears it), or the next driver sees a
+             * stale bit and takes its first request for completed early.
+             */
+            u->reg.utrlcnr = 0;
             u->reg.hce = FIELD_DP32(u->reg.hce, HCE, HCE, 0);
         }
         break;
