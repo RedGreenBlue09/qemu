@@ -755,6 +755,13 @@ static inline bool isar_feature_aa32_ats1e1(const ARMISARegisters *id)
     return FIELD_EX32_IDREG(id, ID_MMFR3, PAN) >= 2;
 }
 
+static inline bool isar_feature_aa32_pmuv2(const ARMISARegisters *id)
+{
+    /* 0xf means "non-standard IMPDEF PMU" */
+    return FIELD_EX32_IDREG(id, ID_DFR0, PERFMON) >= 2 &&
+        FIELD_EX32_IDREG(id, ID_DFR0, PERFMON) != 0xf;
+}
+
 static inline bool isar_feature_aa32_pmuv3p1(const ARMISARegisters *id)
 {
     /* 0xf means "non-standard IMPDEF PMU" */

@@ -1289,6 +1289,27 @@ void define_pm_cpregs(ARMCPU *cpu)
         define_arm_cp_regs(cpu, pmovsset_cp_reginfo);
     }
 
+    if (!arm_feature(env, ARM_FEATURE_V8) &&
+        cpu_isar_feature(aa32_pmuv2, cpu)) {
+        /*
+         * PMCEID0 and PMCEID1 are part of PMUv2 already (Armv7), e.g. on
+         * the Cortex-A7 and A15; Armv8 CPUs get them, with their AArch64
+         * views, below. Windows 10 on ARM32 reads PMCEID0 at boot when
+         * ID_DFR0 reports PMUv2.
+         */
+        const ARMCPRegInfo v7_pmceid_reginfo[] = {
+            { .name = "PMCEID0", .cp = 15, .opc1 = 0, .crn = 9, .crm = 12,
+              .opc2 = 6, .access = PL0_R, .accessfn = pmreg_access,
+              .type = ARM_CP_CONST,
+              .resetvalue = extract64(cpu->pmceid0, 0, 32) },
+            { .name = "PMCEID1", .cp = 15, .opc1 = 0, .crn = 9, .crm = 12,
+              .opc2 = 7, .access = PL0_R, .accessfn = pmreg_access,
+              .type = ARM_CP_CONST,
+              .resetvalue = extract64(cpu->pmceid1, 0, 32) },
+        };
+        define_arm_cp_regs(cpu, v7_pmceid_reginfo);
+    }
+
     if (arm_feature(env, ARM_FEATURE_V8)) {
         const ARMCPRegInfo v8_pm_reginfo[] = {
             { .name = "PMCEID0", .state = ARM_CP_STATE_AA32,
