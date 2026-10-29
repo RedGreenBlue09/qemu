@@ -24,6 +24,43 @@ static int par_el1_shareability(GetPhysAddrResult *res)
     return res->cacheattrs.shareability;
 }
 
+/* Cacheability policy of a MAIR attribute nibble, in 32-bit PAR.Outer form */
+static int par32_policy(int mair_nibble)
+{
+    if (mair_nibble == 0x4) {
+        return 0; /* Non-cacheable */
+    }
+    if (mair_nibble & 4) {
+        return mair_nibble & 1 ? 1 : 3; /* Write-Back, with/without WA */
+    }
+    return 2; /* Write-Through */
+}
+
+/* The Inner, Outer, SH and NOS fields of a 32-bit (short-descriptor) PAR */
+static uint32_t par32_attrs(GetPhysAddrResult *res)
+{
+    uint8_t attrs = res->cacheattrs.attrs;
+    int sh = par_el1_shareability(res);
+    uint32_t par;
+
+    if ((attrs & 0xf0) == 0) {
+        /* Inner 0b001 Strongly-ordered, 0b011 Device; Outer Non-cacheable */
+        par = (attrs == 0 ? 1 : 3) << 4;
+    } else {
+        int inner = par32_policy(attrs & 0xf);
+
+        par = (inner ? 4 | inner : 0) << 4;
+        par |= par32_policy(attrs >> 4) << 2;
+    }
+    if (sh) {
+        par |= 1 << 7; /* SH */
+        if (sh == 3) {
+            par |= 1 << 10; /* NOS: Inner Shareable */
+        }
+    }
+    return par;
+}
+
 static uint64_t do_ats_write(CPUARMState *env, uint64_t value,
                              unsigned prot_check, ARMMMUIdx mmu_idx,
                              ARMSecuritySpace ss)
@@ -171,12 +208,14 @@ static uint64_t do_ats_write(CPUARMState *env, uint64_t value,
          * Convert it to a 32-bit PAR.
          */
         if (ok) {
-            /* We do not set any attribute bits in the PAR */
             if (res.f.lg_page_size == 24
                 && arm_feature(env, ARM_FEATURE_V7)) {
                 par64 = (res.f.phys_addr & 0xff000000) | (1 << 1);
             } else {
                 par64 = res.f.phys_addr & 0xfffff000;
+            }
+            if (arm_feature(env, ARM_FEATURE_V7)) {
+                par64 |= par32_attrs(&res);
             }
             if (!res.f.attrs.secure) {
                 par64 |= (1 << 9); /* NS */

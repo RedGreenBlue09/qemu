@@ -1254,6 +1254,89 @@ do_fault:
     return false;
 }
 
+/*
+ * Compute the memory attributes of a VMSAv7 short-descriptor mapping
+ * from its TEX, C, B and S bits, in the same MAIR-style format that the
+ * long-descriptor walk produces. Nothing uses them for the translation
+ * itself, but the PAR reports them after an address translation
+ * operation, and guests do rely on that (Windows on ARM's boot loader
+ * maps memory with the attributes the firmware's PAR reports).
+ */
+static void get_v6_cacheattrs(CPUARMState *env, ARMMMUIdx mmu_idx,
+                              int tex, int cb, bool s, ARMCacheAttrs *ca)
+{
+    /* Cacheability policy: 0 Non-cacheable, 1 WB-WA, 2 WT, 3 WB-no-WA */
+    static const uint8_t policy_to_mair[4] = { 0x4, 0xf, 0xa, 0xe };
+    int inner, outer;
+    bool nos = false;
+
+    ca->is_s2_format = false;
+
+    if (regime_sctlr(env, mmu_idx) & SCTLR_TRE) {
+        int el = regime_el(mmu_idx);
+        uint32_t prrr, nmrr;
+        int n = ((tex & 1) << 2) | cb;
+
+        if (!arm_feature(env, ARM_FEATURE_LPAE)) {
+            /*
+             * Without LPAE QEMU doesn't keep PRRR and NMRR, so we can't
+             * tell; assume Normal Write-Back memory.
+             */
+            ca->attrs = 0xff;
+            ca->shareability = 0;
+            return;
+        }
+        prrr = extract64(env->cp15.mair_el[el], 0, 32);
+        nmrr = extract64(env->cp15.mair_el[el], 32, 32);
+        switch (extract32(prrr, n * 2, 2)) {
+        case 0: /* Strongly-ordered */
+            ca->attrs = 0x00;
+            ca->shareability = 2;
+            return;
+        case 1: /* Device */
+            ca->attrs = 0x04;
+            ca->shareability = 2;
+            return;
+        default: /* Normal (0b11 is reserved and treated as Normal) */
+            inner = extract32(nmrr, n * 2, 2);
+            outer = extract32(nmrr, 16 + n * 2, 2);
+            nos = extract32(prrr, 24 + n, 1);
+            s = extract32(prrr, 18 + s, 1);
+            break;
+        }
+    } else if (tex & 4) {
+        /* Cacheable memory: TEX[1:0] is the outer policy, C:B the inner */
+        outer = tex & 3;
+        inner = cb;
+    } else {
+        switch ((tex << 2) | cb) {
+        case 0: /* Strongly-ordered */
+            ca->attrs = 0x00;
+            ca->shareability = 2;
+            return;
+        case 1: /* Shareable Device */
+        case 8: /* Non-shareable Device */
+            ca->attrs = 0x04;
+            ca->shareability = 2;
+            return;
+        case 2: /* Write-Through, no Write-Allocate */
+            outer = inner = 2;
+            break;
+        case 3: /* Write-Back, no Write-Allocate */
+            outer = inner = 3;
+            break;
+        case 7: /* Write-Back, Write-Allocate */
+            outer = inner = 1;
+            break;
+        default: /* Non-cacheable, or reserved */
+            outer = inner = 0;
+            break;
+        }
+    }
+    ca->attrs = (policy_to_mair[outer] << 4) | policy_to_mair[inner];
+    ca->shareability = !s ? 0 : nos ? 3 : 2;
+}
+
 static bool get_phys_addr_v6(CPUARMState *env, S1Translate *ptw,
                              uint32_t address, MMUAccessType access_type,
                              GetPhysAddrResult *result, ARMMMUFaultInfo *fi)
@@ -1267,6 +1350,8 @@ static bool get_phys_addr_v6(CPUARMState *env, S1Translate *ptw,
     uint32_t pxn = 0;
     int type;
     int ap;
+    int tex;
+    bool shareable;
     int domain = 0;
     int domain_prot;
     hwaddr phys_addr;
@@ -1330,6 +1415,8 @@ static bool get_phys_addr_v6(CPUARMState *env, S1Translate *ptw,
         xn = desc & (1 << 4);
         pxn = desc & 1;
         ns = extract32(desc, 19, 1);
+        tex = extract32(desc, 12, 3);
+        shareable = extract32(desc, 16, 1);
     } else {
         if (cpu_isar_feature(aa32_pxn, cpu)) {
             pxn = (desc >> 2) & 1;
@@ -1352,17 +1439,20 @@ static bool get_phys_addr_v6(CPUARMState *env, S1Translate *ptw,
         case 1: /* 64k page.  */
             phys_addr = (desc & 0xffff0000) | (address & 0xffff);
             xn = desc & (1 << 15);
+            tex = extract32(desc, 12, 3);
             result->f.lg_page_size = 16;
             break;
         case 2: case 3: /* 4k page.  */
             phys_addr = (desc & 0xfffff000) | (address & 0xfff);
             xn = desc & 1;
+            tex = extract32(desc, 6, 3);
             result->f.lg_page_size = 12;
             break;
         default:
             /* Never happens, but compiler isn't smart enough to tell.  */
             g_assert_not_reached();
         }
+        shareable = extract32(desc, 10, 1);
     }
     out_space = ptw->cur_space;
     if (ns) {
@@ -1404,6 +1494,8 @@ static bool get_phys_addr_v6(CPUARMState *env, S1Translate *ptw,
     result->f.attrs.space = out_space;
     result->f.attrs.secure = arm_space_is_secure(out_space);
     result->f.phys_addr = phys_addr;
+    get_v6_cacheattrs(env, mmu_idx, tex, extract32(desc, 2, 2), shareable,
+                      &result->cacheattrs);
     return true;
 do_fault:
     fi->domain = domain;
