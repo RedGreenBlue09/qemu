@@ -105,6 +105,25 @@ static void acpi_dsdt_add_uart(Aml *scope, const MemMapEntry *uart_memmap,
     aml_append(scope, dev);
 }
 
+static void acpi_dsdt_add_uart16550(Aml *scope, const MemMapEntry *memmap,
+                                   uint32_t irq)
+{
+    Aml *dev = aml_device("SER0");
+    Aml *crs = aml_resource_template();
+
+    aml_append(dev, aml_name_decl("_HID", aml_eisaid("PNP0501")));
+    aml_append(dev, aml_name_decl("_UID", aml_int(0)));
+    /*
+     * Describe only the eight byte-wide 16550 registers: 16550 drivers such
+     * as the Windows serial sample expect an 8 byte register window.
+     */
+    aml_append(crs, aml_memory32_fixed(memmap->base, 8, AML_READ_WRITE));
+    aml_append(crs, aml_interrupt(AML_CONSUMER, AML_LEVEL, AML_ACTIVE_HIGH,
+                                  AML_EXCLUSIVE, &irq, 1));
+    aml_append(dev, aml_name_decl("_CRS", crs));
+    aml_append(scope, dev);
+}
+
 static void acpi_dsdt_add_flash(Aml *scope, const MemMapEntry *flash_memmap)
 {
     Aml *dev, *crs;
@@ -1242,6 +1261,10 @@ build_dsdt(GArray *table_data, BIOSLinker *linker, VirtMachineState *vms)
     if (vms->second_ns_uart_present) {
         acpi_dsdt_add_uart(scope, &memmap[VIRT_UART1],
                            (irqmap[VIRT_UART1] + ARM_SPI_BASE), 1);
+    }
+    if (vms->uart16550) {
+        acpi_dsdt_add_uart16550(scope, &memmap[VIRT_UART16550],
+                                (irqmap[VIRT_UART16550] + ARM_SPI_BASE));
     }
     if (vmc->acpi_expose_flash) {
         acpi_dsdt_add_flash(scope, &memmap[VIRT_FLASH]);

@@ -91,6 +91,7 @@
 #include "hw/virtio/virtio-md-pci.h"
 #include "hw/virtio/virtio-iommu.h"
 #include "hw/char/pl011.h"
+#include "hw/char/serial-mm.h"
 #include "hw/core/cpu.h"
 #include "hw/cxl/cxl.h"
 #include "hw/cxl/cxl_host.h"
@@ -211,6 +212,7 @@ static const MemMapEntry base_memmap[] = {
     [VIRT_PVTIME] =             { 0x090a0000, 0x00010000 },
     [VIRT_SECURE_GPIO] =        { 0x090b0000, 0x00001000 },
     [VIRT_ACPI_PCIHP] =         { 0x090c0000, ACPI_PCIHP_SIZE },
+    [VIRT_UART16550] =          { 0x090d0000, 0x00001000 },
     [VIRT_MAILBOX] =            { 0x09ff8000, 0x00008000 },
     [VIRT_MMIO] =               { 0x0a000000, 0x00000200 },
     /* ...repeating for a total of NUM_VIRTIO_TRANSPORTS, each of that size */
@@ -269,6 +271,7 @@ static const int a15irqmap[] = {
     [VIRT_UART1] = 8,
     [VIRT_ACPI_GED] = 9,
     [VIRT_GWDT_WS0] = 10,
+    [VIRT_UART16550] = 11,
     [VIRT_MMIO] = 16, /* ...to 16 + NUM_VIRTIO_TRANSPORTS - 1 */
     [VIRT_GIC_V2M] = 48, /* ...to 48 + NUM_GICV2M_SPIS - 1 */
     [VIRT_SMMU] = 74,    /* ...to 74 + NUM_SMMU_IRQS - 1 */
@@ -1523,6 +1526,39 @@ static void create_msi_controller(VirtMachineState *vms)
     default:
         g_assert_not_reached();
     }
+}
+
+/*
+ * An optional 16550 UART (ACPI PNP0501, DT ns16550a) in place of the second
+ * PL011, for guests that have a 16550 serial driver but no usable PL011 one,
+ * e.g. Windows on ARM builds whose SerCx2 gives applications no access to a
+ * PL011.
+ */
+static void create_uart16550(const VirtMachineState *vms, MemoryRegion *mem,
+                             Chardev *chr)
+{
+    MachineState *ms = MACHINE(vms);
+    hwaddr base = vms->memmap[VIRT_UART16550].base;
+    hwaddr size = vms->memmap[VIRT_UART16550].size;
+    int irq = vms->irqmap[VIRT_UART16550];
+    const int baudbase = 115200;
+    char *nodename;
+
+    serial_mm_init(mem, base, 0, qdev_get_gpio_in(vms->gic, irq), baudbase,
+                   chr, DEVICE_LITTLE_ENDIAN);
+
+    nodename = g_strdup_printf("/serial@%" PRIx64, base);
+    qemu_fdt_add_subnode(ms->fdt, nodename);
+    qemu_fdt_setprop_string(ms->fdt, nodename, "compatible", "ns16550a");
+    qemu_fdt_setprop_sized_cells(ms->fdt, nodename, "reg", 2, base, 2, size);
+    qemu_fdt_setprop_cells(ms->fdt, nodename, "interrupts",
+                           gic_fdt_irq_type_spi(vms), irq,
+                           GIC_FDT_IRQ_FLAGS_LEVEL_HI);
+    qemu_fdt_setprop_cell(ms->fdt, nodename, "clock-frequency", baudbase * 16);
+    if (!vms->secure) {
+        qemu_fdt_setprop_string(ms->fdt, "/aliases", "serial1", nodename);
+    }
+    g_free(nodename);
 }
 
 static void create_uart(const VirtMachineState *vms, int uart,
@@ -3215,7 +3251,7 @@ static void machvirt_init(MachineState *machine)
      * we create it second (and so it appears first in the DTB), because
      * that's what QEMU has always done.
      */
-    if (!vms->secure) {
+    if (!vms->secure && !vms->uart16550) {
         Chardev *serial1 = serial_hd(1);
 
         if (serial1) {
@@ -3226,6 +3262,14 @@ static void machvirt_init(MachineState *machine)
     create_uart(vms, VIRT_UART0, sysmem, serial_hd(0), false);
     if (vms->secure) {
         create_uart(vms, VIRT_UART1, secure_sysmem, serial_hd(1), true);
+    }
+    if (vms->uart16550) {
+        /*
+         * The 16550 replaces the second non-secure PL011 and takes the second
+         * -serial, or the third with secure=on, where the second one goes to
+         * the secure UART.
+         */
+        create_uart16550(vms, sysmem, serial_hd(vms->secure ? 2 : 1));
     }
 
     if (vms->secure) {
@@ -3351,6 +3395,20 @@ static void virt_set_secure(Object *obj, bool value, Error **errp)
     VirtMachineState *vms = VIRT_MACHINE(obj);
 
     vms->secure = value;
+}
+
+static bool virt_get_uart16550(Object *obj, Error **errp)
+{
+    VirtMachineState *vms = VIRT_MACHINE(obj);
+
+    return vms->uart16550;
+}
+
+static void virt_set_uart16550(Object *obj, bool value, Error **errp)
+{
+    VirtMachineState *vms = VIRT_MACHINE(obj);
+
+    vms->uart16550 = value;
 }
 
 static bool virt_get_force_el3(Object *obj, Error **errp)
@@ -4318,6 +4376,12 @@ static void virt_machine_class_init(ObjectClass *oc, const void *data)
     object_class_property_set_description(oc, "force-el3",
                                           "Force enable EL3 even when secure is false");
 
+    object_class_property_add_bool(oc, "uart16550", virt_get_uart16550,
+                                   virt_set_uart16550);
+    object_class_property_set_description(oc, "uart16550",
+                                          "Use a 16550 UART (PNP0501) instead "
+                                          "of a PL011 as the second UART");
+
     object_class_property_add_bool(oc, "virtualization", virt_get_virt,
                                    virt_set_virt);
     object_class_property_set_description(oc, "virtualization",
@@ -4472,6 +4536,9 @@ static void virt_instance_init(Object *obj)
 
     /* EL3 without secure is only for Windows on ARM 32-bit */
     vms->force_el3 = false;
+
+    /* The second UART is a PL011 unless a 16550 is asked for */
+    vms->uart16550 = false;
 
     vms->highmem_ecam = true;
     vms->highmem_mmio = true;

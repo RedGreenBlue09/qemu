@@ -97,6 +97,7 @@ enum {
     VIRT_NVDIMM_ACPI,
     VIRT_PVTIME,
     VIRT_ACPI_PCIHP,
+    VIRT_UART16550,
     VIRT_MAILBOX,
     VIRT_GWDT_WS0,
     VIRT_GWDT_REFRESH,
@@ -175,6 +176,7 @@ struct VirtMachineState {
     PFlashCFI01 *flash[2];
     bool secure;
     bool force_el3;
+    bool uart16550;
     bool highmem;
     bool highmem_compact;
     bool highmem_cxl;

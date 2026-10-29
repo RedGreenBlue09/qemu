@@ -116,6 +116,13 @@ force-el3
   Set ``on``/``off`` to enable/disable EL3 without secure. Windows on ARM 32-bit
   requires EL3, but no secure firmware runs there. The default is ``off``.
 
+uart16550
+  Set ``on``/``off`` to use a 16550-compatible UART instead of a PL011 as the
+  second UART. It is described in ACPI as a ``PNP0501`` COM port and in the
+  device tree as ``ns16550a``, and takes the second ``-serial`` (the third with
+  ``secure=on``, where the second goes to the secure UART). Useful for guests
+  that have a 16550 driver but no usable PL011 one. The default is ``off``.
+
 virtualization
   Set ``on``/``off`` to enable/disable emulating a guest CPU which implements the
   Arm Virtualization Extensions. The default is ``off``.
